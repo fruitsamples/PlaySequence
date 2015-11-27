@@ -8,12 +8,12 @@ The PlaySequence project provides an example of simple MIDI file playback using 
 ===========================================================================
 BUILD REQUIREMENTS:
 
-Mac OS X v10.6 or later
+Mac OS X v10.7 or later
 
 ===========================================================================
 RUNTIME REQUIREMENTS:
 
-Mac OS X v10.6 or later
+Mac OS X v10.7 or later
 
 ===========================================================================
 PACKAGING LIST:
@@ -24,8 +24,9 @@ main.cpp
 ===========================================================================
 CHANGES FROM PREVIOUS VERSIONS:
 
-Version 1.0
+Version 1.0.1
+- Updated for Mac OS X Lion
 - First version.
 
 ===========================================================================
-Copyright (C) 2009 Apple Inc. All rights reserved.
+Copyright (C) 2011 Apple Inc. All rights reserved.

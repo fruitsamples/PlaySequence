@@ -1,45 +1,51 @@
-/*	Copyright © 2007 Apple Inc. All Rights Reserved.
-	
-	Disclaimer: IMPORTANT:  This Apple software is supplied to you by 
-			Apple Inc. ("Apple") in consideration of your agreement to the
-			following terms, and your use, installation, modification or
-			redistribution of this Apple software constitutes acceptance of these
-			terms.  If you do not agree with these terms, please do not use,
-			install, modify or redistribute this Apple software.
-			
-			In consideration of your agreement to abide by the following terms, and
-			subject to these terms, Apple grants you a personal, non-exclusive
-			license, under Apple's copyrights in this original Apple software (the
-			"Apple Software"), to use, reproduce, modify and redistribute the Apple
-			Software, with or without modifications, in source and/or binary forms;
-			provided that if you redistribute the Apple Software in its entirety and
-			without modifications, you must retain this notice and the following
-			text and disclaimers in all such redistributions of the Apple Software. 
-			Neither the name, trademarks, service marks or logos of Apple Inc. 
-			may be used to endorse or promote products derived from the Apple
-			Software without specific prior written permission from Apple.  Except
-			as expressly stated in this notice, no other rights or licenses, express
-			or implied, are granted by Apple herein, including but not limited to
-			any patent rights that may be infringed by your derivative works or by
-			other works in which the Apple Software may be incorporated.
-			
-			The Apple Software is provided by Apple on an "AS IS" basis.  APPLE
-			MAKES NO WARRANTIES, EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION
-			THE IMPLIED WARRANTIES OF NON-INFRINGEMENT, MERCHANTABILITY AND FITNESS
-			FOR A PARTICULAR PURPOSE, REGARDING THE APPLE SOFTWARE OR ITS USE AND
-			OPERATION ALONE OR IN COMBINATION WITH YOUR PRODUCTS.
-			
-			IN NO EVENT SHALL APPLE BE LIABLE FOR ANY SPECIAL, INDIRECT, INCIDENTAL
-			OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-			SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-			INTERRUPTION) ARISING IN ANY WAY OUT OF THE USE, REPRODUCTION,
-			MODIFICATION AND/OR DISTRIBUTION OF THE APPLE SOFTWARE, HOWEVER CAUSED
-			AND WHETHER UNDER THEORY OF CONTRACT, TORT (INCLUDING NEGLIGENCE),
-			STRICT LIABILITY OR OTHERWISE, EVEN IF APPLE HAS BEEN ADVISED OF THE
-			POSSIBILITY OF SUCH DAMAGE.
+/*
+    File: main.cpp
+Abstract: n/a
+ Version: 1.0.1
+
+Disclaimer: IMPORTANT:  This Apple software is supplied to you by Apple
+Inc. ("Apple") in consideration of your agreement to the following
+terms, and your use, installation, modification or redistribution of
+this Apple software constitutes acceptance of these terms.  If you do
+not agree with these terms, please do not use, install, modify or
+redistribute this Apple software.
+
+In consideration of your agreement to abide by the following terms, and
+subject to these terms, Apple grants you a personal, non-exclusive
+license, under Apple's copyrights in this original Apple software (the
+"Apple Software"), to use, reproduce, modify and redistribute the Apple
+Software, with or without modifications, in source and/or binary forms;
+provided that if you redistribute the Apple Software in its entirety and
+without modifications, you must retain this notice and the following
+text and disclaimers in all such redistributions of the Apple Software.
+Neither the name, trademarks, service marks or logos of Apple Inc. may
+be used to endorse or promote products derived from the Apple Software
+without specific prior written permission from Apple.  Except as
+expressly stated in this notice, no other rights or licenses, express or
+implied, are granted by Apple herein, including but not limited to any
+patent rights that may be infringed by your derivative works or by other
+works in which the Apple Software may be incorporated.
+
+The Apple Software is provided by Apple on an "AS IS" basis.  APPLE
+MAKES NO WARRANTIES, EXPRESS OR IMPLIED, INCLUDING WITHOUT LIMITATION
+THE IMPLIED WARRANTIES OF NON-INFRINGEMENT, MERCHANTABILITY AND FITNESS
+FOR A PARTICULAR PURPOSE, REGARDING THE APPLE SOFTWARE OR ITS USE AND
+OPERATION ALONE OR IN COMBINATION WITH YOUR PRODUCTS.
+
+IN NO EVENT SHALL APPLE BE LIABLE FOR ANY SPECIAL, INDIRECT, INCIDENTAL
+OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) ARISING IN ANY WAY OUT OF THE USE, REPRODUCTION,
+MODIFICATION AND/OR DISTRIBUTION OF THE APPLE SOFTWARE, HOWEVER CAUSED
+AND WHETHER UNDER THEORY OF CONTRACT, TORT (INCLUDING NEGLIGENCE),
+STRICT LIABILITY OR OTHERWISE, EVEN IF APPLE HAS BEEN ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+Copyright (C) 2011 Apple Inc. All Rights Reserved.
+
 */
+
 #include <CoreFoundation/CoreFoundation.h>
-#include <CoreServices/CoreServices.h>
 #include <AudioToolbox/AudioToolbox.h>
 #include <CoreMIDI/CoreMIDI.h>
 #include <pthread.h>
@@ -48,10 +54,10 @@
 
 #include "AUOutputBL.h"
 #include "CAStreamBasicDescription.h"
+#include "CAXException.h"
+#include "CAHostTimeBase.h"
 
-// file handling utils
 #include "CAAudioFileFormats.h"
-#include "CAFilePathUtils.h"
 
 
 static OSStatus LoadSMF(const char *filename, MusicSequence& sequence, MusicSequenceLoadFlags loadFlags);
@@ -251,7 +257,7 @@ malformedInput:
 	MusicSequence sequence;
 	OSStatus result;
 	
-	require_noerr (result = LoadSMF (filePath, sequence, loadFlags), fail);
+	ca_require_noerr (result = LoadSMF (filePath, sequence, loadFlags), fail);
 			
 	if (shouldPrint) 
 		CAShow (sequence);
@@ -261,11 +267,11 @@ malformedInput:
         AUGraph graph = 0;
         AudioUnit theSynth = 0;
 		
-		require_noerr (result = MusicSequenceGetAUGraph (sequence, &graph), fail);
-		require_noerr (result = AUGraphOpen (graph), fail);     
+		ca_require_noerr (result = MusicSequenceGetAUGraph (sequence, &graph), fail);
+		ca_require_noerr (result = AUGraphOpen (graph), fail);     
 		  
-		require_noerr (result = GetSynthFromGraph (graph, theSynth), fail);
-		require_noerr (result = AudioUnitSetProperty (theSynth,
+		ca_require_noerr (result = GetSynthFromGraph (graph, theSynth), fail);
+		ca_require_noerr (result = AudioUnitSetProperty (theSynth,
 										kAudioUnitProperty_CPULoad,
 										kAudioUnitScope_Global, 0,
 										&maxCPULoad, sizeof(maxCPULoad)), fail);
@@ -281,25 +287,26 @@ malformedInput:
                 exit(1);
             }
             
-            require_noerr (result = MusicSequenceSetMIDIEndpoint (sequence, MIDIGetDestination(0)), fail);
+            ca_require_noerr (result = MusicSequenceSetMIDIEndpoint (sequence, MIDIGetDestination(0)), fail);
         } 
 		else 
 		{   
-			if (shouldSetBank) {                
-				FSRef soundBankRef;
-				require_noerr (result = FSPathMakeRef ((const UInt8*)bankPath, &soundBankRef, 0), fail);
+			if (shouldSetBank) {      
+				CFURLRef soundBankURL = CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault, (const UInt8*)bankPath, strlen(bankPath), false);
 								
 				printf ("Setting Sound Bank:%s\n", bankPath);
 					
-				require_noerr (result = AudioUnitSetProperty (theSynth,
-												kMusicDeviceProperty_SoundBankFSRef,
+				result = AudioUnitSetProperty (theSynth,
+												kMusicDeviceProperty_SoundBankURL,
 												kAudioUnitScope_Global, 0,
-												&soundBankRef, sizeof(soundBankRef)), fail);
+												&soundBankURL, sizeof(soundBankURL));
+				CFRelease(soundBankURL);
+				ca_require_noerr (result, fail);
 			}
-						
+
 			if (diskStream) {
 				UInt32 value = diskStream;
-				require_noerr (result = AudioUnitSetProperty (theSynth,
+				ca_require_noerr (result = AudioUnitSetProperty (theSynth,
 											kMusicDeviceProperty_StreamFromDisk,
 											kAudioUnitScope_Global, 0,
 											&value, sizeof(value)), fail);
@@ -308,33 +315,33 @@ malformedInput:
 			if (outputFilePath) {
 				// need to tell synth that is going to render a file.
 				UInt32 value = 1;
-				require_noerr (result = AudioUnitSetProperty (theSynth,
+				ca_require_noerr (result = AudioUnitSetProperty (theSynth,
 												kAudioUnitProperty_OfflineRender,
 												kAudioUnitScope_Global, 0,
 												&value, sizeof(value)), fail);
 			}
 			
-			require_noerr (result = SetUpGraph (graph, numFrames, srate, (outputFilePath != NULL)), fail);
+			ca_require_noerr (result = SetUpGraph (graph, numFrames, srate, (outputFilePath != NULL)), fail);
 			
 			if (shouldPrint) {
 				printf ("Sample Rate: %.1f \n", srate);
 				printf ("Disk Streaming is enabled: %c\n", (diskStream ? 'T' : 'F'));
 			}
 			
-			require_noerr (result = AUGraphInitialize (graph), fail);
+			ca_require_noerr (result = AUGraphInitialize (graph), fail);
 
             if (shouldPrint)
 				CAShow (graph);
         }
         
 		MusicPlayer player;
-		require_noerr (result = NewMusicPlayer (&player), fail);
+		ca_require_noerr (result = NewMusicPlayer (&player), fail);
 
-		require_noerr (result = MusicPlayerSetSequence (player, sequence), fail);
+		ca_require_noerr (result = MusicPlayerSetSequence (player, sequence), fail);
 
 		// figure out sequence length
 		UInt32 ntracks;
-		require_noerr(MusicSequenceGetTrackCount (sequence, &ntracks), fail);
+		ca_require_noerr(MusicSequenceGetTrackCount (sequence, &ntracks), fail);
 		MusicTimeStamp sequenceLength = 0;
 		bool shouldPrintTracks = shouldPrint && !trackSet.empty();
 		if (shouldPrintTracks)
@@ -344,8 +351,8 @@ malformedInput:
 			MusicTrack track;
 			MusicTimeStamp trackLength;
 			UInt32 propsize = sizeof(MusicTimeStamp);
-			require_noerr (result = MusicSequenceGetIndTrack(sequence, i, &track), fail);
-			require_noerr (result = MusicTrackGetProperty(track, kSequenceTrackProperty_TrackLength,
+			ca_require_noerr (result = MusicSequenceGetIndTrack(sequence, i, &track), fail);
+			ca_require_noerr (result = MusicTrackGetProperty(track, kSequenceTrackProperty_TrackLength,
 							&trackLength, &propsize), fail);
 			if (trackLength > sequenceLength)
 				sequenceLength = trackLength;
@@ -353,7 +360,7 @@ malformedInput:
 			if (!trackSet.empty() && (trackSet.find(i) == trackSet.end()))
 			{
 				Boolean mute = true;
-				require_noerr (result = MusicTrackSetProperty(track, kSequenceTrackProperty_MuteStatus, &mute, sizeof(mute)), fail);
+				ca_require_noerr (result = MusicTrackSetProperty(track, kSequenceTrackProperty_MuteStatus, &mute, sizeof(mute)), fail);
 			} 
 			else if (shouldPrintTracks) {
 				printf ("%d, ", int(i+1));
@@ -365,9 +372,9 @@ malformedInput:
 	// now I'm going to add 8 beats on the end for the reverb/long releases to tail off...
 		sequenceLength += 8;
 		
-		require_noerr (result = MusicPlayerSetTime (player, startTime), fail);
+		ca_require_noerr (result = MusicPlayerSetTime (player, startTime), fail);
 		
-		require_noerr (result = MusicPlayerPreroll (player), fail);
+		ca_require_noerr (result = MusicPlayerPreroll (player), fail);
 		
 		if (shouldPrint) {
 			printf ("Ready to play: %s, %.2f beats long\n\t<Enter> to continue: ", filePath, sequenceLength); 
@@ -375,19 +382,19 @@ malformedInput:
 			getc(stdin);
 		}
 		
-		startRunningTime = AudioGetCurrentHostTime ();
+		startRunningTime = CAHostTimeBase::GetCurrentTime ();
 		
 /*		if (waitAtEnd && graph)
 			AUGraphStart(graph);
 */		
-		require_noerr (result = MusicPlayerStart (player), fail);
+		ca_require_noerr (result = MusicPlayerStart (player), fail);
 		
 		if (outputFilePath) 
 			WriteOutputFile (outputFilePath, dataFormat, srate, sequenceLength, shouldPrint, graph, numFrames, player);
 		else
 			PlayLoop (player, graph, sequenceLength, shouldPrint, waitAtEnd);
 					
-		require_noerr (result = MusicPlayerStop (player), fail);
+		ca_require_noerr (result = MusicPlayerStop (player), fail);
 		if (shouldPrint) printf ("finished playing\n");
 
 /*		if (waitAtEnd) {
@@ -398,12 +405,12 @@ malformedInput:
 		}
 */		
 // this shows you how you should dispose of everything
-		require_noerr (result = DisposeMusicPlayer (player), fail);
-		require_noerr (result = DisposeMusicSequence(sequence), fail);
+		ca_require_noerr (result = DisposeMusicPlayer (player), fail);
+		ca_require_noerr (result = DisposeMusicSequence(sequence), fail);
 		// don't own the graph so don't dispose it (the seq owns it as we never set it ourselves, we just got it....)
 	}
 	else {
-		require_noerr (result = DisposeMusicSequence(sequence), fail);
+		ca_require_noerr (result = DisposeMusicSequence(sequence), fail);
 	}
 	
 	while (waitAtEnd)
@@ -425,7 +432,7 @@ void PlayLoop (MusicPlayer &player, AUGraph &graph, MusicTimeStamp sequenceLengt
 		
 		if (didOverload) {
 			printf ("* * * * * %ld Overloads detected on device playing audio\n", didOverload);
-			overloadTime = AudioConvertHostTimeToNanos (overloadTime - startRunningTime);
+			overloadTime = CAHostTimeBase::ConvertToNanos (overloadTime - startRunningTime);
 			printf ("\tSeconds after start = %lf\n", double(overloadTime / 1000000000.));
 			didOverload = 0;
 		}
@@ -433,13 +440,13 @@ void PlayLoop (MusicPlayer &player, AUGraph &graph, MusicTimeStamp sequenceLengt
 		if (waitAtEnd && ++waitCounter > 10) break;
 		
 		MusicTimeStamp time;
-		require_noerr (result = MusicPlayerGetTime (player, &time), fail);
+		ca_require_noerr (result = MusicPlayerGetTime (player, &time), fail);
 					
 		if (shouldPrint) {
 			printf ("current time: %6.2f beats", time);
 			if (graph) {
 				Float32 load;
-				require_noerr (result = AUGraphGetCPULoad(graph, &load), fail);
+				ca_require_noerr (result = AUGraphGetCPULoad(graph, &load), fail);
 				printf (", CPU load = %.2f%%\n", (load * 100.));
 			} else
 				printf ("\n"); //no cpu load on AUGraph - its not running - if just playing out to MIDI
@@ -459,19 +466,19 @@ OSStatus GetSynthFromGraph (AUGraph& inGraph, AudioUnit& outSynth)
 {	
 	UInt32 nodeCount;
 	OSStatus result = noErr;
-	require_noerr (result = AUGraphGetNodeCount (inGraph, &nodeCount), fail);
+	ca_require_noerr (result = AUGraphGetNodeCount (inGraph, &nodeCount), fail);
 	
 	for (UInt32 i = 0; i < nodeCount; ++i) 
 	{
 		AUNode node;
-		require_noerr (result = AUGraphGetIndNode(inGraph, i, &node), fail);
+		ca_require_noerr (result = AUGraphGetIndNode(inGraph, i, &node), fail);
 
 		AudioComponentDescription desc;
-		require_noerr (result = AUGraphNodeInfo(inGraph, node, &desc, 0), fail);
+		ca_require_noerr (result = AUGraphNodeInfo(inGraph, node, &desc, 0), fail);
 		
 		if (desc.componentType == kAudioUnitType_MusicDevice) 
 		{
-			require_noerr (result = AUGraphNodeInfo(inGraph, node, 0, &outSynth), fail);
+			ca_require_noerr (result = AUGraphNodeInfo(inGraph, node, 0, &outSynth), fail);
 			return noErr;
 		}
 	}
@@ -487,7 +494,7 @@ void OverlaodListenerProc(	void *				inRefCon,
 								AudioUnitElement	inElement)
 {
 	didOverload++;
-	overloadTime = AudioGetCurrentHostTime();
+	overloadTime = CAHostTimeBase::GetCurrentTime();
 }
 
 
@@ -501,31 +508,31 @@ OSStatus SetUpGraph (AUGraph &inGraph, UInt32 numFrames, Float64 &sampleRate, bo
 	// the device is going to run at a sample rate it is set at
 	// so, when we set this, we also have to set the max frames for the graph nodes
 	UInt32 nodeCount;
-	require_noerr (result = AUGraphGetNodeCount (inGraph, &nodeCount), home);
+	ca_require_noerr (result = AUGraphGetNodeCount (inGraph, &nodeCount), home);
 
 	for (int i = 0; i < (int)nodeCount; ++i) 
 	{
 		AUNode node;
-		require_noerr (result = AUGraphGetIndNode(inGraph, i, &node), home);
+		ca_require_noerr (result = AUGraphGetIndNode(inGraph, i, &node), home);
 
 		AudioComponentDescription desc;
 		AudioUnit unit;
-		require_noerr (result = AUGraphNodeInfo(inGraph, node, &desc, &unit), home);
+		ca_require_noerr (result = AUGraphNodeInfo(inGraph, node, &desc, &unit), home);
 		
 		if (desc.componentType == kAudioUnitType_Output) 
 		{
 			if (outputUnit == 0) {
 				outputUnit = unit;
-				require_noerr (result = AUGraphNodeInfo(inGraph, node, 0, &outputUnit), home);
+				ca_require_noerr (result = AUGraphNodeInfo(inGraph, node, 0, &outputUnit), home);
 				
 				if (!isOffline) {
 					// these two properties are only applicable if its a device we're playing too
-					require_noerr (result = AudioUnitSetProperty (outputUnit, 
+					ca_require_noerr (result = AudioUnitSetProperty (outputUnit, 
 													kAudioDevicePropertyBufferFrameSize, 
 													kAudioUnitScope_Output, 0,
 													&numFrames, sizeof(numFrames)), home);
 				
-					require_noerr (result = AudioUnitAddPropertyListener (outputUnit, 
+					ca_require_noerr (result = AudioUnitAddPropertyListener (outputUnit, 
 													kAudioDeviceProcessorOverload, 
 													OverlaodListenerProc, 0), home);
 
@@ -533,21 +540,21 @@ OSStatus SetUpGraph (AUGraph &inGraph, UInt32 numFrames, Float64 &sampleRate, bo
 					UInt32 theSize;
 					theSize = sizeof(sampleRate);
 					
-					require_noerr (result = AudioUnitGetProperty (outputUnit,
+					ca_require_noerr (result = AudioUnitGetProperty (outputUnit,
 												kAudioUnitProperty_SampleRate,
 												kAudioUnitScope_Output, 0,
 												&sampleRate, &theSize), home);
 				} else {
 						// remove device output node and add generic output
-					require_noerr (result = AUGraphRemoveNode (inGraph, node), home);
+					ca_require_noerr (result = AUGraphRemoveNode (inGraph, node), home);
 					desc.componentSubType = kAudioUnitSubType_GenericOutput;
-					require_noerr (result = AUGraphAddNode (inGraph, &desc, &node), home);
-					require_noerr (result = AUGraphNodeInfo(inGraph, node, NULL, &unit), home);
+					ca_require_noerr (result = AUGraphAddNode (inGraph, &desc, &node), home);
+					ca_require_noerr (result = AUGraphNodeInfo(inGraph, node, NULL, &unit), home);
 					outputUnit = unit;
 					outputNode = node;
 					
 					// we render the output offline at the desired sample rate
-					require_noerr (result = AudioUnitSetProperty (outputUnit,
+					ca_require_noerr (result = AudioUnitSetProperty (outputUnit,
 												kAudioUnitProperty_SampleRate,
 												kAudioUnitScope_Output, 0,
 												&sampleRate, sizeof(sampleRate)), home);
@@ -563,10 +570,10 @@ OSStatus SetUpGraph (AUGraph &inGraph, UInt32 numFrames, Float64 &sampleRate, bo
 			if (outputUnit) {	
 					// reconnect up to the output unit if we're offline
 				if (isOffline && desc.componentType != kAudioUnitType_MusicDevice) {
-					require_noerr (result = AUGraphConnectNodeInput (inGraph, node, 0, outputNode, 0), home);
+					ca_require_noerr (result = AUGraphConnectNodeInput (inGraph, node, 0, outputNode, 0), home);
 				}
 				
-				require_noerr (result = AudioUnitSetProperty (unit,
+				ca_require_noerr (result = AudioUnitSetProperty (unit,
 											kAudioUnitProperty_SampleRate,
 											kAudioUnitScope_Output, 0,
 											&sampleRate, sizeof(sampleRate)), home);
@@ -574,7 +581,7 @@ OSStatus SetUpGraph (AUGraph &inGraph, UInt32 numFrames, Float64 &sampleRate, bo
 			
 			}
 		}
-		require_noerr (result = AudioUnitSetProperty (unit, kAudioUnitProperty_MaximumFramesPerSlice,
+		ca_require_noerr (result = AudioUnitSetProperty (unit, kAudioUnitProperty_MaximumFramesPerSlice,
 												kAudioUnitScope_Global, 0,
 												&numFrames, sizeof(numFrames)), home);
 	}
@@ -586,14 +593,16 @@ home:
 OSStatus LoadSMF(const char *filename, MusicSequence& sequence, MusicSequenceLoadFlags loadFlags)
 {
 	OSStatus result = noErr;
+    CFURLRef url = NULL;
 	
-	require_noerr (result = NewMusicSequence(&sequence), home);
+	ca_require_noerr (result = NewMusicSequence(&sequence), home);
 	
-	CFURLRef url; url = CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault, (const UInt8*)filename, strlen(filename), false);
+	url = CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault, (const UInt8*)filename, strlen(filename), false);
 	
-	require_noerr (result = MusicSequenceFileLoad (sequence, url, 0, loadFlags), home);
-	
+	ca_require_noerr (result = MusicSequenceFileLoad (sequence, url, 0, loadFlags), home);
+    	
 home:
+    if (url) CFRelease(url);
 	return result;
 }
 
@@ -655,7 +664,7 @@ void WriteOutputFile (const char*	outputFilePath,
 	} else {
 		// use AudioFormat API to fill out the rest.
 		size = sizeof(outputFormat);
-		require_noerr (result = AudioFormatGetProperty(kAudioFormatProperty_FormatInfo, 0, NULL, &size, &outputFormat), fail);
+		ca_require_noerr (result = AudioFormatGetProperty(kAudioFormatProperty_FormatInfo, 0, NULL, &size, &outputFormat), fail);
 	}
 
 	if (shouldPrint) {
@@ -663,43 +672,41 @@ void WriteOutputFile (const char*	outputFilePath,
 		outputFormat.Print();
 	}
 	
-	FSRef parentDir;
-	CFStringRef destFileName;
-	require_noerr (result = PosixPathToParentFSRefAndName(outputFilePath, parentDir, destFileName), fail);
+	CFURLRef url; url = CFURLCreateFromFileSystemRepresentation(NULL, (const UInt8*)outputFilePath, strlen(outputFilePath), false);
 
 	ExtAudioFileRef outfile;
-	result = ExtAudioFileCreateNew (&parentDir, destFileName, destFileType, &outputFormat, NULL, &outfile);
-	CFRelease (destFileName);
-	require_noerr (result, fail);
+	result = ExtAudioFileCreateWithURL(url, destFileType,&outputFormat, NULL, 0, &outfile);
+	CFRelease (url);
+	
+	ca_require_noerr (result, fail);
 
-	AudioUnit outputUnit;	
+	AudioUnit outputUnit;
 	UInt32 nodeCount;
-	require_noerr (result = AUGraphGetNodeCount (inGraph, &nodeCount), fail);
+	ca_require_noerr (result = AUGraphGetNodeCount (inGraph, &nodeCount), fail);
 	
 	for (UInt32 i = 0; i < nodeCount; ++i) 
 	{
 		AUNode node;
-		require_noerr (result = AUGraphGetIndNode(inGraph, i, &node), fail);
+		ca_require_noerr (result = AUGraphGetIndNode(inGraph, i, &node), fail);
 
 		AudioComponentDescription desc;
-		require_noerr (result = AUGraphNodeInfo(inGraph, node, &desc, NULL), fail);
+		ca_require_noerr (result = AUGraphNodeInfo(inGraph, node, &desc, NULL), fail);
 		
 		if (desc.componentType == kAudioUnitType_Output) 
 		{
-			require_noerr (result = AUGraphNodeInfo(inGraph, node, 0, &outputUnit), fail);
+			ca_require_noerr (result = AUGraphNodeInfo(inGraph, node, 0, &outputUnit), fail);
 			break;
 		}
 	}
 
 	{
-		CAStreamBasicDescription clientFormat;
+		CAStreamBasicDescription clientFormat = CAStreamBasicDescription();
+        ca_require_noerr (result = AudioUnitGetProperty(outputUnit,
+                                                        kAudioUnitProperty_StreamFormat,
+                                                        kAudioUnitScope_Output, 0,
+                                                        &clientFormat, &size), fail);
 		size = sizeof(clientFormat);
-		require_noerr (result = AudioUnitGetProperty (outputUnit,
-													kAudioUnitProperty_StreamFormat,
-													kAudioUnitScope_Output, 0,
-													&clientFormat, &size), fail);
-		size = sizeof(clientFormat);
-		require_noerr (result = ExtAudioFileSetProperty(outfile, kExtAudioFileProperty_ClientDataFormat, size, &clientFormat), fail);
+		ca_require_noerr (result = ExtAudioFileSetProperty(outfile, kExtAudioFileProperty_ClientDataFormat, size, &clientFormat), fail);
 		
 		{
 			MusicTimeStamp currentTime;
@@ -712,13 +719,13 @@ void WriteOutputFile (const char*	outputFilePath,
 			do {
 				outputBuffer.Prepare();
 				AudioUnitRenderActionFlags actionFlags = 0;
-				require_noerr (result = AudioUnitRender (outputUnit, &actionFlags, &tStamp, 0, numFrames, outputBuffer.ABL()), fail);
+				ca_require_noerr (result = AudioUnitRender (outputUnit, &actionFlags, &tStamp, 0, numFrames, outputBuffer.ABL()), fail);
 
 				tStamp.mSampleTime += numFrames;
 				
-				require_noerr (result = ExtAudioFileWrite(outfile, numFrames, outputBuffer.ABL()), fail);	
+				ca_require_noerr (result = ExtAudioFileWrite(outfile, numFrames, outputBuffer.ABL()), fail);	
 
-				require_noerr (result = MusicPlayerGetTime (player, &currentTime), fail);
+				ca_require_noerr (result = MusicPlayerGetTime (player, &currentTime), fail);
 				if (shouldPrint && (++i % numTimesFor10Secs == 0))
 					printf ("current time: %6.2f beats\n", currentTime);
 			} while (currentTime < sequenceLength);
