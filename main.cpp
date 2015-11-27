@@ -41,11 +41,13 @@ AND WHETHER UNDER THEORY OF CONTRACT, TORT (INCLUDING NEGLIGENCE),
 STRICT LIABILITY OR OTHERWISE, EVEN IF APPLE HAS BEEN ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
 
-Copyright (C) 2011 Apple Inc. All Rights Reserved.
+Copyright (C) 2012 Apple Inc. All Rights Reserved.
 
 */
 
 #include <CoreFoundation/CoreFoundation.h>
+#include <CoreServices/CoreServices.h>
+#include <CoreAudio/CoreAudioTypes.h>
 #include <AudioToolbox/AudioToolbox.h>
 #include <CoreMIDI/CoreMIDI.h>
 #include <pthread.h>
@@ -54,11 +56,11 @@ Copyright (C) 2011 Apple Inc. All Rights Reserved.
 
 #include "AUOutputBL.h"
 #include "CAStreamBasicDescription.h"
-#include "CAXException.h"
-#include "CAHostTimeBase.h"
 
+// file handling utils
 #include "CAAudioFileFormats.h"
-
+#include "CAFilePathUtils.h"
+#include "CAHostTimeBase.h"
 
 static OSStatus LoadSMF(const char *filename, MusicSequence& sequence, MusicSequenceLoadFlags loadFlags);
 static OSStatus GetSynthFromGraph (AUGraph & inGraph, AudioUnit &outSynth);
@@ -74,40 +76,6 @@ static void WriteOutputFile (const char*	outputFilePath,
 					MusicPlayer		player);
 			
 static void PlayLoop (MusicPlayer &player, AUGraph &graph, MusicTimeStamp sequenceLength, bool shouldPrint, bool waitAtEnd);
-
-
-static void str2OSType (const char * inString, OSType &outType)
-{
-	if (inString == NULL) {
-		outType = 0;
-		return;
-	}
-	
-	size_t len = strlen(inString);
-	if (len <= 4) {
-		char workingString[5];
-		
-		workingString[4] = 0;
-		workingString[0] = workingString[1] = workingString[2] = workingString[3] = ' ';
-		memcpy (workingString, inString, strlen(inString));
-		outType = 	*(workingString + 0) <<	24	|
-					*(workingString + 1) <<	16	|
-					*(workingString + 2) <<	8	|
-					*(workingString + 3);
-		return;
-	}
-
-	if (len <= 8) {
-		if (sscanf (inString, "%lx", &outType) == 0) {
-			printf ("* * Bad conversion for OSType\n"); 
-			exit(1);
-		}
-		return;
-	}
-	printf ("* * Bad conversion for OSType\n"); 
-	exit(1);
-}
-
 
 #define BANK_CMD 		"[-b /Path/To/Sound/Bank.dls]\n\t"
 #define SMF_CHAN_CMD 	"[-c] Will Parse MIDI file into channels\n\t"
@@ -226,13 +194,13 @@ int main (int argc, const char * argv[])
         else if (!strcmp ("-i", argv[i])) 
 		{
 			if (++i == argc) goto malformedInput;
-			sscanf (argv[i], "%ld", &numFrames);
+			sscanf (argv[i], "%lu", (unsigned long*)(&numFrames));
 		}
         else if (!strcmp ("-f", argv[i])) 
 		{
 			if (i + 3 >= argc) goto malformedInput;
 			outputFilePath = argv[++i];
-			str2OSType (argv[++i], dataFormat);
+			StrToOSType (argv[++i], dataFormat);
 			sscanf (argv[++i], "%lf", &srate);
 		}
 		else
@@ -257,7 +225,7 @@ malformedInput:
 	MusicSequence sequence;
 	OSStatus result;
 	
-	ca_require_noerr (result = LoadSMF (filePath, sequence, loadFlags), fail);
+	FailIf ((result = LoadSMF (filePath, sequence, loadFlags)), fail, "LoadSMF");
 			
 	if (shouldPrint) 
 		CAShow (sequence);
@@ -267,14 +235,14 @@ malformedInput:
         AUGraph graph = 0;
         AudioUnit theSynth = 0;
 		
-		ca_require_noerr (result = MusicSequenceGetAUGraph (sequence, &graph), fail);
-		ca_require_noerr (result = AUGraphOpen (graph), fail);     
+		FailIf ((result = MusicSequenceGetAUGraph (sequence, &graph)), fail, "MusicSequenceGetAUGraph");
+		FailIf ((result = AUGraphOpen (graph)), fail, "AUGraphOpen");     
 		  
-		ca_require_noerr (result = GetSynthFromGraph (graph, theSynth), fail);
-		ca_require_noerr (result = AudioUnitSetProperty (theSynth,
+		FailIf ((result = GetSynthFromGraph (graph, theSynth)), fail, "GetSynthFromGraph");
+		FailIf ((result = AudioUnitSetProperty (theSynth,
 										kAudioUnitProperty_CPULoad,
 										kAudioUnitScope_Global, 0,
-										&maxCPULoad, sizeof(maxCPULoad)), fail);
+										&maxCPULoad, sizeof(maxCPULoad))), fail, "AudioUnitSetProperty: kAudioUnitProperty_CPULoad");
 
         if (shouldUseMIDIEndpoint) 
 		{
@@ -287,61 +255,61 @@ malformedInput:
                 exit(1);
             }
             
-            ca_require_noerr (result = MusicSequenceSetMIDIEndpoint (sequence, MIDIGetDestination(0)), fail);
+            FailIf ((result = MusicSequenceSetMIDIEndpoint (sequence, MIDIGetDestination(0))), fail, "MusicSequenceSetMIDIEndpoint");
         } 
 		else 
 		{   
-			if (shouldSetBank) {      
+			if (shouldSetBank) {
 				CFURLRef soundBankURL = CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault, (const UInt8*)bankPath, strlen(bankPath), false);
 								
 				printf ("Setting Sound Bank:%s\n", bankPath);
 					
 				result = AudioUnitSetProperty (theSynth,
-												kMusicDeviceProperty_SoundBankURL,
-												kAudioUnitScope_Global, 0,
-												&soundBankURL, sizeof(soundBankURL));
-				CFRelease(soundBankURL);
-				ca_require_noerr (result, fail);
+                                               kMusicDeviceProperty_SoundBankURL,
+                                               kAudioUnitScope_Global, 0,
+                                               &soundBankURL, sizeof(soundBankURL));
+                if (soundBankURL) CFRelease(soundBankURL);
+                FailIf (result, fail, "AudioUnitSetProperty: kMusicDeviceProperty_SoundBankURL");								
 			}
-
+						
 			if (diskStream) {
 				UInt32 value = diskStream;
-				ca_require_noerr (result = AudioUnitSetProperty (theSynth,
+				FailIf ((result = AudioUnitSetProperty (theSynth,
 											kMusicDeviceProperty_StreamFromDisk,
 											kAudioUnitScope_Global, 0,
-											&value, sizeof(value)), fail);
+											&value, sizeof(value))), fail, "AudioUnitSetProperty: kMusicDeviceProperty_StreamFromDisk");
 			}
 
 			if (outputFilePath) {
 				// need to tell synth that is going to render a file.
 				UInt32 value = 1;
-				ca_require_noerr (result = AudioUnitSetProperty (theSynth,
+				FailIf ((result = AudioUnitSetProperty (theSynth,
 												kAudioUnitProperty_OfflineRender,
 												kAudioUnitScope_Global, 0,
-												&value, sizeof(value)), fail);
+												&value, sizeof(value))), fail, "AudioUnitSetProperty: kAudioUnitProperty_OfflineRender");
 			}
 			
-			ca_require_noerr (result = SetUpGraph (graph, numFrames, srate, (outputFilePath != NULL)), fail);
+			FailIf ((result = SetUpGraph (graph, numFrames, srate, (outputFilePath != NULL))), fail, "SetUpGraph");
 			
 			if (shouldPrint) {
 				printf ("Sample Rate: %.1f \n", srate);
 				printf ("Disk Streaming is enabled: %c\n", (diskStream ? 'T' : 'F'));
 			}
 			
-			ca_require_noerr (result = AUGraphInitialize (graph), fail);
+			FailIf ((result = AUGraphInitialize (graph)), fail, "AUGraphInitialize");
 
             if (shouldPrint)
 				CAShow (graph);
         }
         
 		MusicPlayer player;
-		ca_require_noerr (result = NewMusicPlayer (&player), fail);
+		FailIf ((result = NewMusicPlayer (&player)), fail, "NewMusicPlayer");
 
-		ca_require_noerr (result = MusicPlayerSetSequence (player, sequence), fail);
+		FailIf ((result = MusicPlayerSetSequence (player, sequence)), fail, "MusicPlayerSetSequence");
 
 		// figure out sequence length
 		UInt32 ntracks;
-		ca_require_noerr(MusicSequenceGetTrackCount (sequence, &ntracks), fail);
+		FailIf ((MusicSequenceGetTrackCount (sequence, &ntracks)), fail, "MusicSequenceGetTrackCount");
 		MusicTimeStamp sequenceLength = 0;
 		bool shouldPrintTracks = shouldPrint && !trackSet.empty();
 		if (shouldPrintTracks)
@@ -351,16 +319,16 @@ malformedInput:
 			MusicTrack track;
 			MusicTimeStamp trackLength;
 			UInt32 propsize = sizeof(MusicTimeStamp);
-			ca_require_noerr (result = MusicSequenceGetIndTrack(sequence, i, &track), fail);
-			ca_require_noerr (result = MusicTrackGetProperty(track, kSequenceTrackProperty_TrackLength,
-							&trackLength, &propsize), fail);
+			FailIf ((result = MusicSequenceGetIndTrack(sequence, i, &track)), fail, "MusicSequenceGetIndTrack");
+			FailIf ((result = MusicTrackGetProperty(track, kSequenceTrackProperty_TrackLength,
+							&trackLength, &propsize)), fail, "MusicTrackGetProperty: kSequenceTrackProperty_TrackLength");
 			if (trackLength > sequenceLength)
 				sequenceLength = trackLength;
 			
 			if (!trackSet.empty() && (trackSet.find(i) == trackSet.end()))
 			{
 				Boolean mute = true;
-				ca_require_noerr (result = MusicTrackSetProperty(track, kSequenceTrackProperty_MuteStatus, &mute, sizeof(mute)), fail);
+				FailIf ((result = MusicTrackSetProperty(track, kSequenceTrackProperty_MuteStatus, &mute, sizeof(mute))), fail, "MusicTrackSetProperty: kSequenceTrackProperty_MuteStatus");
 			} 
 			else if (shouldPrintTracks) {
 				printf ("%d, ", int(i+1));
@@ -372,9 +340,9 @@ malformedInput:
 	// now I'm going to add 8 beats on the end for the reverb/long releases to tail off...
 		sequenceLength += 8;
 		
-		ca_require_noerr (result = MusicPlayerSetTime (player, startTime), fail);
+		FailIf ((result = MusicPlayerSetTime (player, startTime)), fail, "MusicPlayerSetTime");
 		
-		ca_require_noerr (result = MusicPlayerPreroll (player), fail);
+		FailIf ((result = MusicPlayerPreroll (player)), fail, "MusicPlayerPreroll");
 		
 		if (shouldPrint) {
 			printf ("Ready to play: %s, %.2f beats long\n\t<Enter> to continue: ", filePath, sequenceLength); 
@@ -382,19 +350,19 @@ malformedInput:
 			getc(stdin);
 		}
 		
-		startRunningTime = CAHostTimeBase::GetCurrentTime ();
+        startRunningTime = CAHostTimeBase::GetTheCurrentTime();
 		
 /*		if (waitAtEnd && graph)
 			AUGraphStart(graph);
 */		
-		ca_require_noerr (result = MusicPlayerStart (player), fail);
+		FailIf ((result = MusicPlayerStart (player)), fail, "MusicPlayerStart");
 		
 		if (outputFilePath) 
 			WriteOutputFile (outputFilePath, dataFormat, srate, sequenceLength, shouldPrint, graph, numFrames, player);
 		else
 			PlayLoop (player, graph, sequenceLength, shouldPrint, waitAtEnd);
 					
-		ca_require_noerr (result = MusicPlayerStop (player), fail);
+		FailIf ((result = MusicPlayerStop (player)), fail, "MusicPlayerStop");
 		if (shouldPrint) printf ("finished playing\n");
 
 /*		if (waitAtEnd) {
@@ -405,12 +373,12 @@ malformedInput:
 		}
 */		
 // this shows you how you should dispose of everything
-		ca_require_noerr (result = DisposeMusicPlayer (player), fail);
-		ca_require_noerr (result = DisposeMusicSequence(sequence), fail);
+		FailIf ((result = DisposeMusicPlayer (player)), fail, "DisposeMusicPlayer");
+		FailIf ((result = DisposeMusicSequence(sequence)), fail, "DisposeMusicSequence");
 		// don't own the graph so don't dispose it (the seq owns it as we never set it ourselves, we just got it....)
 	}
 	else {
-		ca_require_noerr (result = DisposeMusicSequence(sequence), fail);
+		FailIf ((result = DisposeMusicSequence(sequence)), fail, "DisposeMusicSequence");
 	}
 	
 	while (waitAtEnd)
@@ -419,7 +387,7 @@ malformedInput:
     return 0;
 	
 fail:
-	if (shouldPrint) printf ("Error = %ld\n", result);
+	if (shouldPrint) printf ("Error = %ld\n", (long)result);
 	return result;
 }
 
@@ -431,7 +399,7 @@ void PlayLoop (MusicPlayer &player, AUGraph &graph, MusicTimeStamp sequenceLengt
 		usleep (2 * 1000 * 1000);
 		
 		if (didOverload) {
-			printf ("* * * * * %ld Overloads detected on device playing audio\n", didOverload);
+			printf ("* * * * * %lu Overloads detected on device playing audio\n", (unsigned long)didOverload);
 			overloadTime = CAHostTimeBase::ConvertToNanos (overloadTime - startRunningTime);
 			printf ("\tSeconds after start = %lf\n", double(overloadTime / 1000000000.));
 			didOverload = 0;
@@ -440,13 +408,13 @@ void PlayLoop (MusicPlayer &player, AUGraph &graph, MusicTimeStamp sequenceLengt
 		if (waitAtEnd && ++waitCounter > 10) break;
 		
 		MusicTimeStamp time;
-		ca_require_noerr (result = MusicPlayerGetTime (player, &time), fail);
+		FailIf ((result = MusicPlayerGetTime (player, &time)), fail, "MusicPlayerGetTime");
 					
 		if (shouldPrint) {
 			printf ("current time: %6.2f beats", time);
 			if (graph) {
 				Float32 load;
-				ca_require_noerr (result = AUGraphGetCPULoad(graph, &load), fail);
+				FailIf ((result = AUGraphGetCPULoad(graph, &load)), fail, "AUGraphGetCPULoad");
 				printf (", CPU load = %.2f%%\n", (load * 100.));
 			} else
 				printf ("\n"); //no cpu load on AUGraph - its not running - if just playing out to MIDI
@@ -458,7 +426,7 @@ void PlayLoop (MusicPlayer &player, AUGraph &graph, MusicTimeStamp sequenceLengt
 	
 	return;
 fail:
-	if (shouldPrint) printf ("Error = %ld\n", result);
+	if (shouldPrint) printf ("Error = %ld\n", (long)result);
 	exit(1);
 }
 
@@ -466,19 +434,19 @@ OSStatus GetSynthFromGraph (AUGraph& inGraph, AudioUnit& outSynth)
 {	
 	UInt32 nodeCount;
 	OSStatus result = noErr;
-	ca_require_noerr (result = AUGraphGetNodeCount (inGraph, &nodeCount), fail);
+	FailIf ((result = AUGraphGetNodeCount (inGraph, &nodeCount)), fail, "AUGraphGetNodeCount");
 	
 	for (UInt32 i = 0; i < nodeCount; ++i) 
 	{
 		AUNode node;
-		ca_require_noerr (result = AUGraphGetIndNode(inGraph, i, &node), fail);
+		FailIf ((result = AUGraphGetIndNode(inGraph, i, &node)), fail, "AUGraphGetIndNode");
 
 		AudioComponentDescription desc;
-		ca_require_noerr (result = AUGraphNodeInfo(inGraph, node, &desc, 0), fail);
+		FailIf ((result = AUGraphNodeInfo(inGraph, node, &desc, 0)), fail, "AUGraphNodeInfo");
 		
 		if (desc.componentType == kAudioUnitType_MusicDevice) 
 		{
-			ca_require_noerr (result = AUGraphNodeInfo(inGraph, node, 0, &outSynth), fail);
+			FailIf ((result = AUGraphNodeInfo(inGraph, node, 0, &outSynth)), fail, "AUGraphNodeInfo");
 			return noErr;
 		}
 	}
@@ -494,7 +462,7 @@ void OverlaodListenerProc(	void *				inRefCon,
 								AudioUnitElement	inElement)
 {
 	didOverload++;
-	overloadTime = CAHostTimeBase::GetCurrentTime();
+	overloadTime = CAHostTimeBase::GetTheCurrentTime();
 }
 
 
@@ -508,56 +476,56 @@ OSStatus SetUpGraph (AUGraph &inGraph, UInt32 numFrames, Float64 &sampleRate, bo
 	// the device is going to run at a sample rate it is set at
 	// so, when we set this, we also have to set the max frames for the graph nodes
 	UInt32 nodeCount;
-	ca_require_noerr (result = AUGraphGetNodeCount (inGraph, &nodeCount), home);
+	FailIf ((result = AUGraphGetNodeCount (inGraph, &nodeCount)), home, "AUGraphGetNodeCount");
 
 	for (int i = 0; i < (int)nodeCount; ++i) 
 	{
 		AUNode node;
-		ca_require_noerr (result = AUGraphGetIndNode(inGraph, i, &node), home);
+		FailIf ((result = AUGraphGetIndNode(inGraph, i, &node)), home, "AUGraphGetIndNode");
 
 		AudioComponentDescription desc;
 		AudioUnit unit;
-		ca_require_noerr (result = AUGraphNodeInfo(inGraph, node, &desc, &unit), home);
+		FailIf ((result = AUGraphNodeInfo(inGraph, node, &desc, &unit)), home, "AUGraphNodeInfo");
 		
 		if (desc.componentType == kAudioUnitType_Output) 
 		{
 			if (outputUnit == 0) {
 				outputUnit = unit;
-				ca_require_noerr (result = AUGraphNodeInfo(inGraph, node, 0, &outputUnit), home);
+				FailIf ((result = AUGraphNodeInfo(inGraph, node, 0, &outputUnit)), home, "AUGraphNodeInfo");
 				
 				if (!isOffline) {
 					// these two properties are only applicable if its a device we're playing too
-					ca_require_noerr (result = AudioUnitSetProperty (outputUnit, 
+					FailIf ((result = AudioUnitSetProperty (outputUnit, 
 													kAudioDevicePropertyBufferFrameSize, 
 													kAudioUnitScope_Output, 0,
-													&numFrames, sizeof(numFrames)), home);
+													&numFrames, sizeof(numFrames))), home, "AudioUnitSetProperty: kAudioDevicePropertyBufferFrameSize");
 				
-					ca_require_noerr (result = AudioUnitAddPropertyListener (outputUnit, 
+					FailIf ((result = AudioUnitAddPropertyListener (outputUnit, 
 													kAudioDeviceProcessorOverload, 
-													OverlaodListenerProc, 0), home);
+													OverlaodListenerProc, 0)), home, "AudioUnitAddPropertyListener: kAudioDeviceProcessorOverload");
 
 					// if we're rendering to the device, then we render at its sample rate
 					UInt32 theSize;
 					theSize = sizeof(sampleRate);
 					
-					ca_require_noerr (result = AudioUnitGetProperty (outputUnit,
+					FailIf ((result = AudioUnitGetProperty (outputUnit,
 												kAudioUnitProperty_SampleRate,
 												kAudioUnitScope_Output, 0,
-												&sampleRate, &theSize), home);
+												&sampleRate, &theSize)), home, "AudioUnitGetProperty: kAudioUnitProperty_SampleRate");
 				} else {
 						// remove device output node and add generic output
-					ca_require_noerr (result = AUGraphRemoveNode (inGraph, node), home);
+					FailIf ((result = AUGraphRemoveNode (inGraph, node)), home, "AUGraphRemoveNode");
 					desc.componentSubType = kAudioUnitSubType_GenericOutput;
-					ca_require_noerr (result = AUGraphAddNode (inGraph, &desc, &node), home);
-					ca_require_noerr (result = AUGraphNodeInfo(inGraph, node, NULL, &unit), home);
+					FailIf ((result = AUGraphAddNode (inGraph, &desc, &node)), home, "AUGraphAddNode");
+					FailIf ((result = AUGraphNodeInfo(inGraph, node, NULL, &unit)), home, "AUGraphNodeInfo");
 					outputUnit = unit;
 					outputNode = node;
 					
 					// we render the output offline at the desired sample rate
-					ca_require_noerr (result = AudioUnitSetProperty (outputUnit,
+					FailIf ((result = AudioUnitSetProperty (outputUnit,
 												kAudioUnitProperty_SampleRate,
 												kAudioUnitScope_Output, 0,
-												&sampleRate, sizeof(sampleRate)), home);
+												&sampleRate, sizeof(sampleRate))), home, "AudioUnitSetProperty: kAudioUnitProperty_SampleRate");
 				}
 				// ok, lets start the loop again now and do it all...
 				i = -1;
@@ -570,20 +538,20 @@ OSStatus SetUpGraph (AUGraph &inGraph, UInt32 numFrames, Float64 &sampleRate, bo
 			if (outputUnit) {	
 					// reconnect up to the output unit if we're offline
 				if (isOffline && desc.componentType != kAudioUnitType_MusicDevice) {
-					ca_require_noerr (result = AUGraphConnectNodeInput (inGraph, node, 0, outputNode, 0), home);
+					FailIf ((result = AUGraphConnectNodeInput (inGraph, node, 0, outputNode, 0)), home, "AUGraphConnectNodeInput");
 				}
 				
-				ca_require_noerr (result = AudioUnitSetProperty (unit,
+				FailIf ((result = AudioUnitSetProperty (unit,
 											kAudioUnitProperty_SampleRate,
 											kAudioUnitScope_Output, 0,
-											&sampleRate, sizeof(sampleRate)), home);
+											&sampleRate, sizeof(sampleRate))), home, "AudioUnitSetProperty: kAudioUnitProperty_SampleRate");
 			
 			
 			}
 		}
-		ca_require_noerr (result = AudioUnitSetProperty (unit, kAudioUnitProperty_MaximumFramesPerSlice,
+		FailIf ((result = AudioUnitSetProperty (unit, kAudioUnitProperty_MaximumFramesPerSlice,
 												kAudioUnitScope_Global, 0,
-												&numFrames, sizeof(numFrames)), home);
+												&numFrames, sizeof(numFrames))), home, "AudioUnitSetProperty: kAudioUnitProperty_MaximumFramesPerSlice");
 	}
 	
 home:
@@ -595,12 +563,12 @@ OSStatus LoadSMF(const char *filename, MusicSequence& sequence, MusicSequenceLoa
 	OSStatus result = noErr;
     CFURLRef url = NULL;
 	
-	ca_require_noerr (result = NewMusicSequence(&sequence), home);
+	FailIf ((result = NewMusicSequence(&sequence)), home, "NewMusicSequence");
 	
 	url = CFURLCreateFromFileSystemRepresentation(kCFAllocatorDefault, (const UInt8*)filename, strlen(filename), false);
 	
-	ca_require_noerr (result = MusicSequenceFileLoad (sequence, url, 0, loadFlags), home);
-    	
+	FailIf ((result = MusicSequenceFileLoad (sequence, url, 0, loadFlags)), home, "MusicSequenceFileLoad");
+	
 home:
     if (url) CFRelease(url);
 	return result;
@@ -608,23 +576,6 @@ home:
 
 #pragma mark -
 #pragma mark Write Output File
-
-bool TestFile (const char* fname, bool inDelete)
-{
-	// use this to determine if a file exists first
-	FILE *f = fopen (fname, "r");
-	if (f) {
-		fclose (f);
-		// wipe out the output file
-		if (inDelete) {
-			char str[1024];
-			sprintf (str, "rm %s", fname);
-			system(str);
-		}
-		return true;
-	}
-	return false;
-}
 
 void WriteOutputFile (const char*	outputFilePath, 
 					OSType			dataFormat, 
@@ -635,8 +586,6 @@ void WriteOutputFile (const char*	outputFilePath,
 					UInt32			numFrames,
 					MusicPlayer		player)
 {
-		// delete existing output  file
-	TestFile (outputFilePath, true);
 	OSStatus result = 0;
 	UInt32 size;
 
@@ -664,7 +613,7 @@ void WriteOutputFile (const char*	outputFilePath,
 	} else {
 		// use AudioFormat API to fill out the rest.
 		size = sizeof(outputFormat);
-		ca_require_noerr (result = AudioFormatGetProperty(kAudioFormatProperty_FormatInfo, 0, NULL, &size, &outputFormat), fail);
+		FailIf ((result = AudioFormatGetProperty(kAudioFormatProperty_FormatInfo, 0, NULL, &size, &outputFormat)), fail, "");
 	}
 
 	if (shouldPrint) {
@@ -673,40 +622,42 @@ void WriteOutputFile (const char*	outputFilePath,
 	}
 	
 	CFURLRef url; url = CFURLCreateFromFileSystemRepresentation(NULL, (const UInt8*)outputFilePath, strlen(outputFilePath), false);
-
+    
+    // create output file, delete existing file
 	ExtAudioFileRef outfile;
-	result = ExtAudioFileCreateWithURL(url, destFileType,&outputFormat, NULL, 0, &outfile);
-	CFRelease (url);
-	
-	ca_require_noerr (result, fail);
+	result = ExtAudioFileCreateWithURL(url, destFileType, &outputFormat, NULL, kAudioFileFlags_EraseFile, &outfile);
+	if (url) CFRelease (url);	
+	FailIf (result, fail, "ExtAudioFileCreateWithURL");
 
-	AudioUnit outputUnit;
+	AudioUnit outputUnit; outputUnit = NULL;
 	UInt32 nodeCount;
-	ca_require_noerr (result = AUGraphGetNodeCount (inGraph, &nodeCount), fail);
+	FailIf ((result = AUGraphGetNodeCount (inGraph, &nodeCount)), fail, "AUGraphGetNodeCount");
 	
 	for (UInt32 i = 0; i < nodeCount; ++i) 
 	{
 		AUNode node;
-		ca_require_noerr (result = AUGraphGetIndNode(inGraph, i, &node), fail);
+		FailIf ((result = AUGraphGetIndNode(inGraph, i, &node)), fail, "AUGraphGetIndNode");
 
 		AudioComponentDescription desc;
-		ca_require_noerr (result = AUGraphNodeInfo(inGraph, node, &desc, NULL), fail);
+		FailIf ((result = AUGraphNodeInfo(inGraph, node, &desc, NULL)), fail, "AUGraphNodeInfo");
 		
 		if (desc.componentType == kAudioUnitType_Output) 
 		{
-			ca_require_noerr (result = AUGraphNodeInfo(inGraph, node, 0, &outputUnit), fail);
+			FailIf ((result = AUGraphNodeInfo(inGraph, node, 0, &outputUnit)), fail, "AUGraphNodeInfo");
 			break;
 		}
 	}
-
+    
+    FailIf ((result = (outputUnit == NULL)), fail, "outputUnit == NULL");
 	{
 		CAStreamBasicDescription clientFormat = CAStreamBasicDescription();
-        ca_require_noerr (result = AudioUnitGetProperty(outputUnit,
-                                                        kAudioUnitProperty_StreamFormat,
-                                                        kAudioUnitScope_Output, 0,
-                                                        &clientFormat, &size), fail);
 		size = sizeof(clientFormat);
-		ca_require_noerr (result = ExtAudioFileSetProperty(outfile, kExtAudioFileProperty_ClientDataFormat, size, &clientFormat), fail);
+		FailIf ((result = AudioUnitGetProperty (outputUnit,
+													kAudioUnitProperty_StreamFormat,
+													kAudioUnitScope_Output, 0,
+													&clientFormat, &size)), fail, "AudioUnitGetProperty: kAudioUnitProperty_StreamFormat");
+		size = sizeof(clientFormat);
+		FailIf ((result = ExtAudioFileSetProperty(outfile, kExtAudioFileProperty_ClientDataFormat, size, &clientFormat)), fail, "ExtAudioFileSetProperty: kExtAudioFileProperty_ClientDataFormat");
 		
 		{
 			MusicTimeStamp currentTime;
@@ -719,13 +670,13 @@ void WriteOutputFile (const char*	outputFilePath,
 			do {
 				outputBuffer.Prepare();
 				AudioUnitRenderActionFlags actionFlags = 0;
-				ca_require_noerr (result = AudioUnitRender (outputUnit, &actionFlags, &tStamp, 0, numFrames, outputBuffer.ABL()), fail);
+				FailIf ((result = AudioUnitRender (outputUnit, &actionFlags, &tStamp, 0, numFrames, outputBuffer.ABL())), fail, "AudioUnitRender");
 
 				tStamp.mSampleTime += numFrames;
 				
-				ca_require_noerr (result = ExtAudioFileWrite(outfile, numFrames, outputBuffer.ABL()), fail);	
+				FailIf ((result = ExtAudioFileWrite(outfile, numFrames, outputBuffer.ABL())), fail, "ExtAudioFileWrite");	
 
-				ca_require_noerr (result = MusicPlayerGetTime (player, &currentTime), fail);
+				FailIf ((result = MusicPlayerGetTime (player, &currentTime)), fail, "MusicPlayerGetTime");
 				if (shouldPrint && (++i % numTimesFor10Secs == 0))
 					printf ("current time: %6.2f beats\n", currentTime);
 			} while (currentTime < sequenceLength);
@@ -738,6 +689,6 @@ void WriteOutputFile (const char*	outputFilePath,
 	return;
 
 fail:
-	printf ("Problem: %ld\n", result); 
+	printf ("Problem: %ld\n", (long)result); 
 	exit(1);
 }

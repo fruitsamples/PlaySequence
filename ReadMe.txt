@@ -9,6 +9,7 @@ The PlaySequence project provides an example of simple MIDI file playback using 
 BUILD REQUIREMENTS:
 
 Mac OS X v10.7 or later
+Xcode v4.3 or later
 
 ===========================================================================
 RUNTIME REQUIREMENTS:
